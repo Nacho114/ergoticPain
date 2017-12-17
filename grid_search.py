@@ -1,7 +1,7 @@
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
+import os
 import numpy as np
 
 from multiprocessing import Pool
@@ -20,11 +20,21 @@ def accept_prob_with_energy_using_energy(wp, prev_energy, beta, X, Y):
     next_energy = energy(wp, X, Y)
     return (min(1.0, np.exp(-beta*(next_energy - prev_energy))), next_energy)
 
+def sum_two_vec_pad(a, b):
+    if len(a) < len(b):
+        c = b.copy()
+        c[:len(a)] += a
+    else:
+        c = a.copy()
+        c[:len(b)] += b
 
-def metropolis_sim_anneal_fastest(w_init, beta_init, beta_pace, X, Y, schedule = 1, epsilon=1e-7, max_iter=1000000):
+    return c
+
+
+def metropolis_sim_anneal_fastest(w_init, beta_init, beta_pace, X, Y, schedule = 1, epsilon=1e-4, max_iter=100000):
     M = X.shape[0] # number of samples
     N = w_init.shape[0] # number of dimensions
-    w_est = np.copy(w_init) 
+    w_est = np.copy(w_init)
     beta = beta_init
 
     energy_record = np.array([])
@@ -32,7 +42,7 @@ def metropolis_sim_anneal_fastest(w_init, beta_init, beta_pace, X, Y, schedule =
     energy_record = np.append(energy_record, current_energy)
     ctr = 0
 
-    while ((current_energy/M > epsilon) or ctr<max_iter):
+    while ((current_energy/M > epsilon) and ctr<max_iter):
         ctr +=1
         index_rand = np.random.randint(0, N)
         wp = np.copy(w_est)
@@ -41,12 +51,13 @@ def metropolis_sim_anneal_fastest(w_init, beta_init, beta_pace, X, Y, schedule =
         accept_probability, next_energy = accept_prob_with_energy_using_energy(wp, current_energy, beta, X, Y)
         if np.random.uniform() < accept_probability:
             # accept the move, update the weights and the current energy
-            w_est = wp 
+            w_est = wp
             current_energy = next_energy
         if(ctr%schedule == 0):
             beta = beta * beta_pace
 
         energy_record= np.append(energy_record, current_energy)
+
 
     return w_est, energy_record, (1.0/M) * current_energy, ctr, beta
 
@@ -78,28 +89,31 @@ def conv_dict_to_str(parameter):
     dict_str = dict_str.replace('}', '')
     return dict_str
 
-def run_metropolis_mult(parameter_dict):
+def run_metropolis_mult(inp):
+    thread_idx = inp[0]
+    parameter_dict = inp[1]
+    print('Running thread: ', thread_idx)
+
     N = parameter_dict['N']
     nb_runs = parameter_dict['nb_runs']
     beta = parameter_dict['beta']
     pace = parameter_dict['pace']
     M_values = parameter_dict['M']
     schedule = parameter_dict['schedule']
-    
+
     normalized_energies_per_alpha = np.array([])
     overlap_per_alpha = np.array([])
     avg_beta_last_per_alpha = np.array([])
     avg_iter_done_per_alpha = np.array([])
-    
+
     alpha_list = M_values/float(N)
-    root_folder = '/home/ssingh/markov_chain/ergoticPain/grid_search/'
+    root_folder = os.getcwd() + '/grid_search/'
     mkdir(root_folder)
 
     foldername = root_folder + conv_dict_to_str(parameter_dict) + '/'
     mkdir(foldername)
-    print("bitch1")
+
     for M in M_values:
-        print("bitch2", M)
         overlap_acc = np.zeros(nb_runs)
         normalized_energy_record_acc = np.zeros(nb_runs)
         iter_done_acc = np.zeros(nb_runs)
@@ -115,7 +129,6 @@ def run_metropolis_mult(parameter_dict):
             # the energy record is probably just the very last value
             # we should also save the averaged curves and then the averaged last value
             w_est, energy_record, normalized_energy_last, iter_done, beta_last = metropolis_sim_anneal_fastest(w_init, beta, pace, X, Y, schedule)
-            
             energy_record_acc = sum_two_vec_pad(energy_record_acc, energy_record)
 
             normalized_energy_record_acc[i] = normalized_energy_last
@@ -123,20 +136,20 @@ def run_metropolis_mult(parameter_dict):
             iter_done_acc[i] = iter_done
             beta_last_acc[i] = beta_last
 
-        
+
         overlap_per_alpha = np.append(overlap_per_alpha, np.mean(overlap_acc))
         avg_beta_last_per_alpha = np.append(avg_beta_last_per_alpha, np.mean(beta_last_acc))
         avg_iter_done_per_alpha = np.append(avg_iter_done_per_alpha, np.mean(iter_done_acc))
         normalized_energies_per_alpha = np.append(normalized_energies_per_alpha, np.mean(normalized_energy_record_acc))
-        
+
         #save the plot for accumulated energy record across all nb_runs
         plt.plot(energy_record_acc)
-        plt.savefig(foldername + 'energy_record_acc_' + M + '.png')
+        plt.savefig(foldername + 'energy_record_acc_' + str(M) + '.png')
         plt.close()
-        np.save(foldername + 'energy_record_acc_' + M, energy_record_acc)
-    
+        np.save(foldername + 'energy_record_acc_' + str(M), energy_record_acc)
 
-    #save the plot for each of the alpha's  
+
+    #save the plot for each of the alpha's
     plt.plot(alpha_list, normalized_energies_per_alpha)
     plt.savefig(foldername + 'normalized_energies_per_alpha.png')
     plt.close()
@@ -144,7 +157,7 @@ def run_metropolis_mult(parameter_dict):
     plt.savefig(foldername + 'overlap_per_alpha.png')
     plt.close()
 
-    # serialize the various values produced! 
+    # serialize the various values produced!
     np.save(foldername + 'normalized_energies_per_alpha', normalized_energies_per_alpha)
     np.save(foldername + 'overlap_per_alpha', overlap_per_alpha)
     np.save(foldername + 'avg_beta_last_per_alpha', avg_beta_last_per_alpha)
@@ -153,18 +166,29 @@ def run_metropolis_mult(parameter_dict):
     return normalized_energies_per_alpha, overlap_per_alpha, avg_beta_last_per_alpha, avg_iter_done_per_alpha
 
 
-num_cores = 48
+num_cores = 4
+
+'''
 beta_values = [0.1, 0.3, 0.4, 0.7, 0.9]
 pace_values = [1.0002, 1.001, 1.002]
 schedule_values = [1, 10]
 N_values = [40, 60, 75, 100]
 nb_runs_values = [50, 40, 30, 20]
+'''
+
+
+beta_values = [0.1]
+pace_values = [1.001]
+schedule_values = [10]
+N_values = [40]
+nb_runs_values = [20]
 
 problems = map(lambda x,y:(x,y), N_values, nb_runs_values)
 problem_list = list(problems)
 alpha_values = np.linspace(0.5, 5, 10)
-alpha_values = np.append(alpha_values, [7.0, 10.0])
+#alpha_values = np.append(alpha_values, [7.0, 10.0])
 M_values = {}
+
 for n in N_values:
     M_values[n] = np.asarray(n*alpha_values, dtype=int)
 
@@ -186,5 +210,6 @@ for prob in problem_list:
                 grid_points.append(parameter)
 
 pool = Pool(num_cores)
-ans = pool.map_async(run_metropolis_mult, grid_points[:2])
+ans = pool.map_async(run_metropolis_mult, [(i, grid_pt) for i, grid_pt in enumerate(grid_points[:2])])
+
 ans.wait()
