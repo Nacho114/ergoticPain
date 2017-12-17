@@ -3,6 +3,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import os
 import numpy as np
+import time
+import datetime
 
 from multiprocessing import Pool
 
@@ -30,8 +32,13 @@ def sum_two_vec_pad(a, b):
 
     return c
 
+def get_timestamp():
+    ts = time.time() 
+    timestamp = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d_%H:%M:%S')
+    return timestamp
 
-def metropolis_sim_anneal_fastest(w_init, beta_init, beta_pace, X, Y, schedule = 1, epsilon=1e-4, max_iter=100000):
+
+def metropolis_sim_anneal_fastest(thread_idx, w_init, beta_init, beta_pace, X, Y, schedule = 1, epsilon=1e-2, max_iter=100000):
     M = X.shape[0] # number of samples
     N = w_init.shape[0] # number of dimensions
     w_est = np.copy(w_init)
@@ -57,7 +64,7 @@ def metropolis_sim_anneal_fastest(w_init, beta_init, beta_pace, X, Y, schedule =
             beta = beta * beta_pace
 
         energy_record= np.append(energy_record, current_energy)
-
+    #print("Thread: ", thread_idx, ctr, current_energy)
 
     return w_est, energy_record, (1.0/M) * current_energy, ctr, beta
 
@@ -76,6 +83,7 @@ beta_pace = 1.01
 #epsilon = 0.01
 '''
 
+solved = 0 
 def mkdir(path):
     if not os.path.exists(path):
         os.makedirs(path)
@@ -107,13 +115,14 @@ def run_metropolis_mult(inp):
     avg_iter_done_per_alpha = np.array([])
 
     alpha_list = M_values/float(N)
-    root_folder = os.getcwd() + '/grid_search/'
+    root_folder = os.getcwd() + '/grid_search_' + get_timestamp() + '/'
     mkdir(root_folder)
 
     foldername = root_folder + conv_dict_to_str(parameter_dict) + '/'
     mkdir(foldername)
 
     for M in M_values:
+        #print("------ M is ", M)
         overlap_acc = np.zeros(nb_runs)
         normalized_energy_record_acc = np.zeros(nb_runs)
         iter_done_acc = np.zeros(nb_runs)
@@ -128,7 +137,7 @@ def run_metropolis_mult(inp):
             w_init = 2 * np.random.random_integers(0, 1, N) - 1
             # the energy record is probably just the very last value
             # we should also save the averaged curves and then the averaged last value
-            w_est, energy_record, normalized_energy_last, iter_done, beta_last = metropolis_sim_anneal_fastest(w_init, beta, pace, X, Y, schedule)
+            w_est, energy_record, normalized_energy_last, iter_done, beta_last = metropolis_sim_anneal_fastest(thread_idx, w_init, beta, pace, X, Y, schedule)
             energy_record_acc = sum_two_vec_pad(energy_record_acc, energy_record)
 
             normalized_energy_record_acc[i] = normalized_energy_last
@@ -162,26 +171,24 @@ def run_metropolis_mult(inp):
     np.save(foldername + 'overlap_per_alpha', overlap_per_alpha)
     np.save(foldername + 'avg_beta_last_per_alpha', avg_beta_last_per_alpha)
     np.save(foldername + 'avg_iter_done_per_alpha', avg_iter_done_per_alpha)
-
     return normalized_energies_per_alpha, overlap_per_alpha, avg_beta_last_per_alpha, avg_iter_done_per_alpha
+    
+num_cores = 48
 
 
-num_cores = 4
-
-'''
 beta_values = [0.1, 0.3, 0.4, 0.7, 0.9]
 pace_values = [1.0002, 1.001, 1.002]
 schedule_values = [1, 10]
 N_values = [40, 60, 75, 100]
 nb_runs_values = [50, 40, 30, 20]
+
 '''
-
-
 beta_values = [0.1]
 pace_values = [1.001]
 schedule_values = [10]
 N_values = [40]
 nb_runs_values = [20]
+'''
 
 problems = map(lambda x,y:(x,y), N_values, nb_runs_values)
 problem_list = list(problems)
@@ -210,6 +217,7 @@ for prob in problem_list:
                 grid_points.append(parameter)
 
 pool = Pool(num_cores)
-ans = pool.map_async(run_metropolis_mult, [(i, grid_pt) for i, grid_pt in enumerate(grid_points[:2])])
-
-ans.wait()
+print(len(grid_points))
+ans = pool.map_async(run_metropolis_mult, [(i, grid_pt) for i, grid_pt in enumerate(grid_points)])
+pool.close()
+pool.join()
