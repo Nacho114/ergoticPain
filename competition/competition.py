@@ -50,18 +50,6 @@ print('Running simmultion...')
 
 ############
 
-# For testing
-
-w = 2 * np.random.random_integers(0, 1, N) - 1
-X = np.random.randn(M, N)
-Y = np.sign(np.dot(X, w))
-
-w_p = 2 * np.random.random_integers(0, 1, N) - 1
-print(energy(w_p, X, Y))
-
-
-###########
-
 # Parameters
 
 beta = 0.7
@@ -70,8 +58,8 @@ nb_iter = 10000
 
 # Simulation
 
-w_est = metropolis_fastest(nb_iter, beta, beta_pace, X, Y, epsilon=0)
-energy_of_est = energy(w_est, X, Y)
+w_est = metropolis_fastest(nb_iter, beta, beta_pace, X, y, epsilon=0)
+energy_of_est = energy(w_est, X, y)
 y_est = np.dot(X, w_est)
 
 # Store results
