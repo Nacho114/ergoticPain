@@ -82,6 +82,7 @@ beta_init = 0.01
 beta_pace = 1.01
 #epsilon = 0.01
 '''
+graphs={}
 
 solved = 0 
 def mkdir(path):
@@ -89,7 +90,8 @@ def mkdir(path):
         os.makedirs(path)
 
 def conv_dict_to_str(parameter):
-    parameter.pop('M')
+    if('M' in parameter):
+        parameter.pop('M')
     dict_str = str(parameter)
     dict_str = dict_str.replace(' ', '_')
     dict_str = dict_str.replace('\'', '')
@@ -115,12 +117,10 @@ def run_metropolis_mult(inp):
     avg_iter_done_per_alpha = np.array([])
 
     alpha_list = M_values/float(N)
-    root_folder = os.getcwd() + '/grid_search_' + get_timestamp() + '/'
-    mkdir(root_folder)
-
+    
     foldername = root_folder + conv_dict_to_str(parameter_dict) + '/'
     mkdir(foldername)
-
+    energies = []
     for M in M_values:
         #print("------ M is ", M)
         overlap_acc = np.zeros(nb_runs)
@@ -156,7 +156,7 @@ def run_metropolis_mult(inp):
         plt.savefig(foldername + 'energy_record_acc_' + str(M) + '.png')
         plt.close()
         np.save(foldername + 'energy_record_acc_' + str(M), energy_record_acc)
-
+        energies.append(energy_record_acc)
 
     #save the plot for each of the alpha's
     plt.plot(alpha_list, normalized_energies_per_alpha)
@@ -165,6 +165,7 @@ def run_metropolis_mult(inp):
     plt.plot(alpha_list, overlap_per_alpha)
     plt.savefig(foldername + 'overlap_per_alpha.png')
     plt.close()
+    graphs[conv_dict_to_str(parameter_dict)] = energies, normalized_energies_per_alpha, overlap_per_alpha
 
     # serialize the various values produced!
     np.save(foldername + 'normalized_energies_per_alpha', normalized_energies_per_alpha)
@@ -176,28 +177,35 @@ def run_metropolis_mult(inp):
 num_cores = 48
 
 
-beta_values = [0.1, 0.3, 0.4, 0.7, 0.9]
-pace_values = [1.0002, 1.001, 1.002]
-schedule_values = [1, 10]
-N_values = [40, 60, 75, 100]
-nb_runs_values = [50, 40, 30, 20]
+beta_values = [0.2, 0.3, 0.33, 0.36, 0.4, 0.43]
+pace_values = [1.0002, 1.001]
+schedule_values = [1, 3, 6, 10]
+N_values = [780]
+nb_runs_values = [5]
+
 
 '''
 beta_values = [0.1]
 pace_values = [1.001]
 schedule_values = [10]
-N_values = [40]
-nb_runs_values = [20]
+N_values = [10]
+nb_runs_values = [1]
 '''
+
+
+root_folder = os.getcwd() + '/grid_search_compete_' + get_timestamp() + '/'
+mkdir(root_folder)
+
 
 problems = map(lambda x,y:(x,y), N_values, nb_runs_values)
 problem_list = list(problems)
 alpha_values = np.linspace(0.5, 5, 10)
+#alpha_values = [20]
 #alpha_values = np.append(alpha_values, [7.0, 10.0])
 M_values = {}
 
 for n in N_values:
-    M_values[n] = np.asarray(n*alpha_values, dtype=int)
+    M_values[n] = 9982
 
 grid_points=[]
 for prob in problem_list:
@@ -215,9 +223,36 @@ for prob in problem_list:
                 parameter['M'] = gp_M
                 parameter['schedule'] = gp_schedule
                 grid_points.append(parameter)
+print(grid_points)
+#print(conv_dict_to_str(grid_points[0]))
+
+colors = ['r', 'b', 'g', 'y']
 
 pool = Pool(num_cores)
 print(len(grid_points))
 ans = pool.map_async(run_metropolis_mult, [(i, grid_pt) for i, grid_pt in enumerate(grid_points)])
 pool.close()
 pool.join()
+
+'''
+for gp_beta in beta_values:
+    for gp_pace in pace_values:
+        para = {}
+        para['N'] = N_values[0]
+        para['beta'] = gp_beta
+        para['pace'] = gp_pace
+
+        for i, gp_schedule in enumerate(schedule_values):
+            parameter = {}
+            parameter['N'] = N_values[0]
+            parameter['beta'] = gp_beta
+            parameter['pace'] = gp_pace
+            parameter['schedule'] = gp_schedule
+            obj = graphs[conv_dict_to_str(parameter)]    
+            plt.plot(obj[1], colors[i])
+        plt.savefig(root_folder + "effect_of_schedule_" +conv_dict_to_str(para) + ".png")
+
+
+'''
+
+  
