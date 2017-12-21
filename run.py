@@ -1,4 +1,12 @@
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import os
 import numpy as np
+import time
+import datetime
+
+from multiprocessing import Pool
 
 
 '''
@@ -84,14 +92,14 @@ def metropolis_fastest(nb_iter, schedule, beta, beta_pace, X, Y, epsilon=0):
 
 
         ctr += 1
-        print("At iteration ", ctr)
+        #print("At iteration ", ctr)
     return w
 
 
 ############
 # Import .mat files
 
-file_name = '../data.mat'
+file_name = 'data.mat'
 var = scipy.io.loadmat(file_name)
 
 y = var['y']
@@ -112,15 +120,51 @@ print('Running simmultion...')
 
 ###########
 
-# Parameters
+beta_values = [0.2, 0.3, 0.33, 0.36, 0.4, 0.43]
+pace_values = [1.0002, 1.001]
+schedule_values = [1, 3, 6, 10]
+N_values = [780]
+nb_runs_values = [1]
+nb_iter = 4000
 
+# Parameters
+'''
 beta = 0.4
 beta_pace = 1.002
-nb_iter = 10000
 schedule = 2
+'''
+
+problems = map(lambda x,y:(x,y), N_values, nb_runs_values)
+problem_list = list(problems)
+alpha_values = np.linspace(0.5, 5, 10)
+#alpha_values = [20]
+#alpha_values = np.append(alpha_values, [7.0, 10.0])
+M_values = {}
+
+for n in N_values:
+    M_values[n] = 9982
+
+grid_points=[]
+for prob in problem_list:
+    gp_N = prob[0]
+    gp_nb_runs = prob[1]
+    gp_M = M_values[gp_N]
+    for gp_beta in beta_values:
+        for gp_pace in pace_values:
+            for gp_schedule in schedule_values:
+                parameter = {}
+                parameter['N'] = gp_N
+                parameter['nb_runs'] = gp_nb_runs
+                parameter['beta'] = gp_beta
+                parameter['pace'] = gp_pace
+                parameter['M'] = gp_M
+                parameter['schedule'] = gp_schedule
+                grid_points.append(parameter)
+#print(grid_points)
+#
 
 # Simulation
-
+'''
 w_est = metropolis_fastest(nb_iter, schedule, beta, beta_pace, X, y, epsilon=1e-3)
 energy_of_est = energy(w_est, X, y)
 y_est = np.dot(X, w_est)
@@ -130,4 +174,33 @@ print(energy_of_est)
 # Store results
 name = 'answer_ErgoticPain' + str(get_timestamp) + '.mat'
 scipy.io.savemat(name, mdict={'w': w_est, 'E': energy_of_est, 'ytest': y_est})
+'''
 
+def run_simul(inp):
+    thread_idx = inp[0]
+    parameter_dict = inp[1]
+    print('Running thread: ', thread_idx)
+    
+    N = parameter_dict['N']
+    beta = parameter_dict['beta']
+    beta_pace = parameter_dict['pace']
+    M_values = parameter_dict['M']
+    schedule = parameter_dict['schedule']
+
+    w_est = metropolis_fastest(nb_iter, schedule, beta, beta_pace, X, y, epsilon=1e-3)
+    energy_of_est = energy(w_est, X, y)
+    y_est = np.dot(X, w_est)
+
+    print(energy_of_est, " with thread_idx ", thread_idx)
+
+    # Store results
+    name = 'answer_ErgoticPain' + "thread_" + str(thread_idx) + "_ " + str(get_timestamp) + '.mat'
+    scipy.io.savemat(name, mdict={'w': w_est, 'E': energy_of_est, 'ytest': y_est})
+
+num_cores = 48
+
+pool = Pool(num_cores)
+print(len(grid_points))
+ans = pool.map_async(run_simul, [(i, grid_pt) for i, grid_pt in enumerate(grid_points)])
+pool.close()
+pool.join()
